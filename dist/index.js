@@ -20,6 +20,11 @@ const getQuote_1 = require("./getQuote");
 const signTransaction_1 = require("./signTransaction");
 const getBalance_1 = require("./getBalance");
 const prisma_1 = __importDefault(require("./prisma"));
+const http_1 = __importDefault(require("http"));
+http_1.default.createServer((_, res) => {
+    res.writeHead(200);
+    res.end("Bot is running!");
+}).listen(process.env.PORT || 3000);
 const token = process.env.TELEGRAM_BOT_API;
 if (!token) {
     throw new Error("❌ TELEGRAM_BOT_API is not defined in environment variables.");

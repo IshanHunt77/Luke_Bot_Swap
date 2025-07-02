@@ -7,6 +7,13 @@ import { getQuote } from './getQuote';
 import { signTransaction } from './signTransaction';
 import { getBalance } from './getBalance';
 import prisma from './prisma';
+import http from "http";
+
+http.createServer((_, res) => {
+  res.writeHead(200);
+  res.end("Bot is running!");
+}).listen(process.env.PORT || 3000);
+
 
 
 const token = process.env.TELEGRAM_BOT_API;
@@ -51,7 +58,7 @@ bot.onText(/^\/start$/, async (msg) => {
         publickey: wallet.publicKey.toBase58(),
         privatekey: JSON.stringify(Array.from(wallet.secretKey))
       }
-      
+
     });
   }
 
