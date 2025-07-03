@@ -13,9 +13,10 @@ exports.getQuote = void 0;
 const fetchTokens_1 = require("./fetchTokens");
 const getQuote = (_a) => __awaiter(void 0, [_a], void 0, function* ({ inputToken, outputToken, amount, slippage }) {
     console.log("🔍 Quote requested:", { inputToken, outputToken, amount, slippage });
-    yield (0, fetchTokens_1.fetchAndStoreTokens)();
+    yield (0, fetchTokens_1.fetchAndStoreTokens)(inputToken, outputToken);
     const inputMint = fetchTokens_1.tokens.get(inputToken);
     const outputMint = fetchTokens_1.tokens.get(outputToken);
+    console.log(inputMint, outputMint);
     if (!inputMint)
         throw new Error(`Input token with symbol ${inputToken} not found.`);
     if (!outputMint)
@@ -24,6 +25,7 @@ const getQuote = (_a) => __awaiter(void 0, [_a], void 0, function* ({ inputToken
     const quoteUrl = `https://lite-api.jup.ag/swap/v1/quote?inputMint=${inputMint.address}&outputMint=${outputMint.address}&amount=${lamports}&slippageBps=${slippage * 100}&restrictIntermediateTokens=true`;
     console.log("🌐 Fetching quote from:", quoteUrl);
     const res = yield fetch(quoteUrl);
+    fetchTokens_1.tokens.clear();
     let quoteResponse = yield res.json();
     return { quoteResponse, outputDecimalValue: outputMint.decimals };
 });

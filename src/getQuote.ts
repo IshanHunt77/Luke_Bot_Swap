@@ -12,10 +12,11 @@ interface Quote {
 
 export const getQuote = async ({ inputToken, outputToken, amount, slippage }: Quote) => {
   console.log("🔍 Quote requested:", { inputToken, outputToken, amount, slippage });
-  await fetchAndStoreTokens();
+  await fetchAndStoreTokens(inputToken,outputToken);
 
   const inputMint = tokens.get(inputToken)
   const outputMint = tokens.get(outputToken)
+  console.log(inputMint,outputMint);
 
   if (!inputMint) throw new Error(`Input token with symbol ${inputToken} not found.`);
   if (!outputMint) throw new Error(`Output token with symbol ${outputToken} not found.`);
@@ -25,7 +26,7 @@ export const getQuote = async ({ inputToken, outputToken, amount, slippage }: Qu
 
   console.log("🌐 Fetching quote from:", quoteUrl);
   const res = await fetch(quoteUrl);
-  
+  tokens.clear();
 
   let quoteResponse: any = await res.json();
   

@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@google/genai": "^1.8.0",
     "@prisma/client": "^6.11.0",
     "@solana/web3.js": "^1.98.2",
     "axios": "^1.10.0",

@@ -15,18 +15,8 @@ var __asyncValues = (this && this.__asyncValues) || function (o) {
     function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
     function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
 };
-var __await = (this && this.__await) || function (v) { return this instanceof __await ? (this.v = v, this) : new __await(v); }
-var __asyncGenerator = (this && this.__asyncGenerator) || function (thisArg, _arguments, generator) {
-    if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
-    var g = generator.apply(thisArg, _arguments || []), i, q = [];
-    return i = Object.create((typeof AsyncIterator === "function" ? AsyncIterator : Object).prototype), verb("next"), verb("throw"), verb("return", awaitReturn), i[Symbol.asyncIterator] = function () { return this; }, i;
-    function awaitReturn(f) { return function (v) { return Promise.resolve(v).then(f, reject); }; }
-    function verb(n, f) { if (g[n]) { i[n] = function (v) { return new Promise(function (a, b) { q.push([n, v, a, b]) > 1 || resume(n, v); }); }; if (f) i[n] = f(i[n]); } }
-    function resume(n, v) { try { step(g[n](v)); } catch (e) { settle(q[0][3], e); } }
-    function step(r) { r.value instanceof __await ? Promise.resolve(r.value.v).then(fulfill, reject) : settle(q[0][2], r); }
-    function fulfill(value) { resume("next", value); }
-    function reject(value) { resume("throw", value); }
-    function settle(f, v) { if (f(v), q.shift(), q.length) resume(q[0][0], q[0][1]); }
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchAndStoreTokens = exports.tokens = void 0;
@@ -34,48 +24,83 @@ const stream_1 = require("stream");
 // @ts-ignore if needed for TS
 const stream_json_1 = require("stream-json");
 const StreamArray_1 = require("stream-json/streamers/StreamArray");
-const promises_1 = require("node:stream/promises");
+const stream_chain_1 = require("stream-chain");
+const prisma_1 = __importDefault(require("./prisma"));
+const getTokenFromDb = (symbol) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const token = yield prisma_1.default.token.findFirst({
+            where: { symbol }
+        });
+        if (token) {
+            exports.tokens.set(symbol, {
+                symbol: token.symbol,
+                name: token.name,
+                address: token.address,
+                decimals: token.decimals
+            });
+        }
+    }
+    catch (e) {
+        console.log("Error:", e);
+    }
+});
 exports.tokens = new Map();
-const fetchAndStoreTokens = () => __awaiter(void 0, void 0, void 0, function* () {
+const fetchAndStoreTokens = (symbol1, symbol2) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, e_1, _b, _c;
+    yield getTokenFromDb(symbol1);
+    yield getTokenFromDb(symbol2);
+    if (exports.tokens.size == 2) {
+        return;
+    }
     const res = yield fetch("https://lite-api.jup.ag/tokens/v1/all");
     if (!res.ok || !res.body) {
         throw new Error(`Failed to fetch: ${res.status}`);
     }
     const nodeStream = stream_1.Readable.fromWeb(res.body);
-    console.log(res.body);
-    yield (0, promises_1.pipeline)(nodeStream, (0, stream_json_1.parser)(), (0, StreamArray_1.streamArray)(), function (source) {
-        return __asyncGenerator(this, arguments, function* () {
-            var _a, e_1, _b, _c;
-            try {
-                for (var _d = true, source_1 = __asyncValues(source), source_1_1; source_1_1 = yield __await(source_1.next()), _a = source_1_1.done, !_a; _d = true) {
-                    _c = source_1_1.value;
-                    _d = false;
-                    const { value } = _c;
-                    const { symbol, name, address, decimals } = value;
-                    exports.tokens.set(symbol, { symbol, name, address, decimals });
-                    // Add this debug log to confirm parsing works
-                    console.log("Parsed token:", symbol);
-                    if (!symbol || !name || !address || decimals === undefined)
-                        continue;
-                    try {
-                        // await prisma.token.upsert({ ... })
+    const chainStream = (0, stream_chain_1.chain)([
+        nodeStream,
+        (0, stream_json_1.parser)(),
+        (0, StreamArray_1.streamArray)()
+    ]);
+    let found = 0;
+    try {
+        for (var _d = true, chainStream_1 = __asyncValues(chainStream), chainStream_1_1; chainStream_1_1 = yield chainStream_1.next(), _a = chainStream_1_1.done, !_a; _d = true) {
+            _c = chainStream_1_1.value;
+            _d = false;
+            const { value } = _c;
+            const { symbol, name, address, decimals } = value;
+            if (!symbol || !name || !address || decimals === undefined)
+                continue;
+            if (symbol === symbol1 || symbol === symbol2) {
+                exports.tokens.set(symbol, { symbol, name, address, decimals });
+                console.log("Parsed token:", symbol);
+                found++;
+                yield prisma_1.default.token.create({
+                    data: {
+                        symbol,
+                        name,
+                        address,
+                        decimals
                     }
-                    catch (err) {
-                        console.error(`⚠️ Failed to insert ${symbol}`, err);
-                    }
-                }
+                });
             }
-            catch (e_1_1) { e_1 = { error: e_1_1 }; }
-            finally {
-                try {
-                    if (!_d && !_a && (_b = source_1.return)) yield __await(_b.call(source_1));
-                }
-                finally { if (e_1) throw e_1.error; }
+            if (found === 2) {
+                console.log("destroying");
+                // Manually stop the stream
+                chainStream.destroy(); // 👈 this prevents the abort error
+                break;
             }
-        });
-    });
+        }
+    }
+    catch (e_1_1) { e_1 = { error: e_1_1 }; }
+    finally {
+        try {
+            if (!_d && !_a && (_b = chainStream_1.return)) yield _b.call(chainStream_1);
+        }
+        finally { if (e_1) throw e_1.error; }
+    }
     console.log("✅ Token import completed.");
-    console.log(exports.tokens.get('SOL'));
+    console.log(exports.tokens.get(symbol1));
 });
 exports.fetchAndStoreTokens = fetchAndStoreTokens;
 // fetchAndStoreTokens().catch(err => {
