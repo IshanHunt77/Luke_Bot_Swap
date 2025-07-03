@@ -14,25 +14,37 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
+const express_1 = __importDefault(require("express"));
 const web3_js_1 = require("@solana/web3.js");
 const node_telegram_bot_api_1 = __importDefault(require("node-telegram-bot-api"));
 const getQuote_1 = require("./getQuote");
 const signTransaction_1 = require("./signTransaction");
 const getBalance_1 = require("./getBalance");
 const prisma_1 = __importDefault(require("./prisma"));
-const http_1 = __importDefault(require("http"));
-http_1.default.createServer((_, res) => {
-    res.writeHead(200);
-    res.end("Bot is running!");
-}).listen(process.env.PORT || 3000);
 const token = process.env.TELEGRAM_BOT_API;
 if (!token) {
     throw new Error("❌ TELEGRAM_BOT_API is not defined in environment variables.");
 }
-const bot = new node_telegram_bot_api_1.default(token, { polling: true });
+const app = (0, express_1.default)();
+const port = process.env.PORT || 3000;
+const url = process.env.RENDER_EXTERNAL_URL; // Your Render service URL (set this in Render env vars)
+if (!url) {
+    throw new Error("❌ RENDER_EXTERNAL_URL environment variable is required.");
+}
+const bot = new node_telegram_bot_api_1.default(token, { webHook: true });
+// Set Telegram webhook URL
+bot.setWebHook(`${url}/bot${token}`).then(() => {
+    console.log(`Webhook set to: ${url}/bot${token}`);
+}).catch(console.error);
+app.use(express_1.default.json());
+// Route to receive webhook updates from Telegram
+app.post(`/bot${token}`, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+});
+// Your existing bot logic here:
 const connection = new web3_js_1.Connection("https://api.mainnet-beta.solana.com");
 const userStates = new Map();
-console.log("🚀 Bot is up and running!");
 const swapQuestions = [
     '',
     '*Step 1:* Please enter the *input token* (e.g., `SOL`, `ETH`).',
@@ -69,7 +81,10 @@ Click *OK* to begin your swap journey 🚀
     const sentMessage = yield bot.sendMessage(Number(chatId), welcomeMessage, {
         parse_mode: "Markdown",
         reply_markup: {
-            inline_keyboard: [[{ text: "🔄 Refresh", callback_data: "refresh" }], [{ text: '✅ OK', callback_data: 'ok' }]]
+            inline_keyboard: [
+                [{ text: "🔄 Refresh", callback_data: "refresh" }],
+                [{ text: "✅ OK", callback_data: "ok" }]
+            ]
         }
     });
     setTimeout(() => bot.deleteMessage(Number(chatId), sentMessage.message_id).catch(() => { }), 300000);
@@ -93,8 +108,8 @@ bot.on('callback_query', (callbackQuery) => __awaiter(void 0, void 0, void 0, fu
                 const amount = Number(amountStr);
                 const slippage = Number(slippageStr);
                 if (isNaN(amount) || isNaN(slippage))
-                    throw new Error("Invalid amount or slippage value.");
-                yield bot.sendMessage(Number(chatId), "⏳ Fetching the best quote for your swap...");
+                    throw new Error("Invalid amount or slippage.");
+                yield bot.sendMessage(Number(chatId), "⏳ Fetching the best quote...");
                 const response = yield (0, getQuote_1.getQuote)({ inputToken, outputToken, amount, slippage });
                 state.quoteResponse = response.quoteResponse;
                 const received = response.quoteResponse.outAmount / Math.pow(10, response.outputDecimalValue);
@@ -108,7 +123,10 @@ Click *Transact* to proceed or *Cancel* to abort.`;
                 yield bot.sendMessage(Number(chatId), quoteMessage, {
                     parse_mode: "Markdown",
                     reply_markup: {
-                        inline_keyboard: [[{ text: "💸 Transact", callback_data: "transact" }], [{ text: "❌ Cancel", callback_data: "cancel" }]]
+                        inline_keyboard: [
+                            [{ text: "💸 Transact", callback_data: "transact" }],
+                            [{ text: "❌ Cancel", callback_data: "cancel" }]
+                        ]
                     }
                 });
             }
@@ -162,7 +180,10 @@ Click *OK* to continue.`;
                 yield bot.sendMessage(Number(chatId), msg, {
                     parse_mode: "Markdown",
                     reply_markup: {
-                        inline_keyboard: [[{ text: "🔄 Refresh", callback_data: "refresh" }], [{ text: "✅ OK", callback_data: "ok" }]]
+                        inline_keyboard: [
+                            [{ text: "🔄 Refresh", callback_data: "refresh" }],
+                            [{ text: "✅ OK", callback_data: "ok" }]
+                        ]
                     }
                 });
             }
@@ -214,3 +235,6 @@ Click *Swap* to proceed or *Back* to make changes.`;
         }
     }
 }));
+app.listen(port, () => {
+    console.log(`🚀 Bot server listening on port ${port}`);
+});

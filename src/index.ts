@@ -1,28 +1,43 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import express from 'express';
 import { Connection, Keypair } from '@solana/web3.js';
 import TelegramBot from 'node-telegram-bot-api';
 import { getQuote } from './getQuote';
 import { signTransaction } from './signTransaction';
 import { getBalance } from './getBalance';
 import prisma from './prisma';
-import http from "http";
-
-http.createServer((_, res) => {
-  res.writeHead(200);
-  res.end("Bot is running!");
-}).listen(process.env.PORT || 3000);
-
-
 
 const token = process.env.TELEGRAM_BOT_API;
 if (!token) {
   throw new Error("❌ TELEGRAM_BOT_API is not defined in environment variables.");
 }
 
-const bot = new TelegramBot(token, { polling: true });
+const app = express();
+const port = process.env.PORT || 3000;
+const url = process.env.RENDER_EXTERNAL_URL; // Your Render service URL (set this in Render env vars)
 
+if (!url) {
+  throw new Error("❌ RENDER_EXTERNAL_URL environment variable is required.");
+}
+
+const bot = new TelegramBot(token, { webHook: true });
+
+// Set Telegram webhook URL
+bot.setWebHook(`${url}/bot${token}`).then(() => {
+  console.log(`Webhook set to: ${url}/bot${token}`);
+}).catch(console.error);
+
+app.use(express.json());
+
+// Route to receive webhook updates from Telegram
+app.post(`/bot${token}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// Your existing bot logic here:
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 
 interface UserSession {
@@ -33,7 +48,6 @@ interface UserSession {
 }
 
 const userStates = new Map<string, UserSession>();
-console.log("🚀 Bot is up and running!");
 
 const swapQuestions = [
   '',
@@ -45,8 +59,8 @@ const swapQuestions = [
 
 bot.onText(/^\/start$/, async (msg) => {
   const chatId = msg.chat.id.toString();
-
   let wallet: Keypair;
+
   const userInfo = await prisma.user.findFirst({ where: { telegramId: chatId } });
   if (userInfo) {
     wallet = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(userInfo.privatekey)));
@@ -58,7 +72,6 @@ bot.onText(/^\/start$/, async (msg) => {
         publickey: wallet.publicKey.toBase58(),
         privatekey: JSON.stringify(Array.from(wallet.secretKey))
       }
-
     });
   }
 
@@ -76,7 +89,10 @@ Click *OK* to begin your swap journey 🚀
   const sentMessage = await bot.sendMessage(Number(chatId), welcomeMessage, {
     parse_mode: "Markdown",
     reply_markup: {
-      inline_keyboard: [[{ text: "🔄 Refresh", callback_data: "refresh" }], [{ text: '✅ OK', callback_data: 'ok' }]]
+      inline_keyboard: [
+        [{ text: "🔄 Refresh", callback_data: "refresh" }],
+        [{ text: "✅ OK", callback_data: "ok" }]
+      ]
     }
   });
 
@@ -104,10 +120,9 @@ bot.on('callback_query', async (callbackQuery) => {
         const [inputToken, outputToken, amountStr, slippageStr] = state.answers;
         const amount = Number(amountStr);
         const slippage = Number(slippageStr);
+        if (isNaN(amount) || isNaN(slippage)) throw new Error("Invalid amount or slippage.");
 
-        if (isNaN(amount) || isNaN(slippage)) throw new Error("Invalid amount or slippage value.");
-
-        await bot.sendMessage(Number(chatId), "⏳ Fetching the best quote for your swap...");
+        await bot.sendMessage(Number(chatId), "⏳ Fetching the best quote...");
         const response = await getQuote({ inputToken, outputToken, amount, slippage });
         state.quoteResponse = response.quoteResponse;
 
@@ -123,7 +138,10 @@ Click *Transact* to proceed or *Cancel* to abort.`;
         await bot.sendMessage(Number(chatId), quoteMessage, {
           parse_mode: "Markdown",
           reply_markup: {
-            inline_keyboard: [[{ text: "💸 Transact", callback_data: "transact" }], [{ text: "❌ Cancel", callback_data: "cancel" }]]
+            inline_keyboard: [
+              [{ text: "💸 Transact", callback_data: "transact" }],
+              [{ text: "❌ Cancel", callback_data: "cancel" }]
+            ]
           }
         });
       } catch (e: any) {
@@ -179,7 +197,10 @@ Click *OK* to continue.`;
         await bot.sendMessage(Number(chatId), msg, {
           parse_mode: "Markdown",
           reply_markup: {
-            inline_keyboard: [[{ text: "🔄 Refresh", callback_data: "refresh" }], [{ text: "✅ OK", callback_data: "ok" }]]
+            inline_keyboard: [
+              [{ text: "🔄 Refresh", callback_data: "refresh" }],
+              [{ text: "✅ OK", callback_data: "ok" }]
+            ]
           }
         });
       } catch (e) {
@@ -232,4 +253,8 @@ Click *Swap* to proceed or *Back* to make changes.`;
       });
     }
   }
+});
+
+app.listen(port, () => {
+  console.log(`🚀 Bot server listening on port ${port}`);
 });
